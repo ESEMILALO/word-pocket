@@ -1,7 +1,7 @@
 // Word Pocket works without internet once it has been opened: the app's own
 // files are kept here. They are checked for a newer version each time the
 // phone is online, so an update arrives by itself on the next opening.
-const CACHE = 'word-pocket-v6';
+const CACHE = 'word-pocket-v7';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-maskable-512.png', 'icons/favicon-32.png'];
 

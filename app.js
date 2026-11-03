@@ -289,6 +289,27 @@
     });
     return out;
   }
+  // Synonyms Wiktionary lists under a meaning: "#: {{syn|en|quick|speedy}}"
+  function plainWiki(t){
+    for(let k = 0; k < 3; k++) t = t.replace(/\{\{[^{}]*\}\}/g, '');
+    return t.replace(/\[\[(?:[^|\]]*\|)?([^\]]*)\]\]/g, '$1').replace(/'{2,}/g, '').replace(/\s+/g, ' ').trim();
+  }
+  function synonymsIn(text){
+    const out = [];
+    let pos = '', cur = null;
+    englishPart(text).split('\n').forEach(line => {
+      const h = line.match(/^===+\s*([A-Za-z ]+?)\s*===+\s*$/);
+      if(h && /^(noun|verb|adjective|adverb|phrasal verb|phrase|idiom|interjection|preposition)$/i.test(h[1])) pos = h[1].toLowerCase();
+      if(/^#\s/.test(line)){ cur = { pos, def: plainWiki(line.slice(2)), syns: [] }; out.push(cur); return; }
+      const m = line.match(/^#:\s*\{\{(?:syn|synonyms)\|en\|([^}]*)\}\}/);
+      if(m && cur) m[1].split('|').forEach(p => {
+        p = p.replace(/<[^>]*>/g, '').trim();
+        if(p && p.indexOf('=') === -1 && !/^Thesaurus:/.test(p) && cur.syns.indexOf(p) === -1) cur.syns.push(p);
+      });
+    });
+    return out.filter(x => x.syns.length);
+  }
+
   // the word as it is listed: "meanders" -> "meander", "ran" -> "run"
   function baseIn(text){
     const t = englishPart(text);
@@ -368,6 +389,23 @@
     let esFailed = false;
     if(!es.length){ const mm = await toSpanish(title); if(mm === null) esFailed = true; else es = mm; }
 
+    // similar words: Wiktionary's synonyms for the most used meaning, else
+    // the ones that meaning names itself ("...; swift, rapid")
+    let similar = [];
+    const syns = synonymsIn(text);
+    // the main meaning's synonyms, topped up from the next meaning only when thin
+    for(const s of (byPos[0] ? byPos[0].senses.slice(0, 3) : [])){
+      let best = null, score = 0;
+      syns.forEach(x => { if(x.pos && s.pos && x.pos !== s.pos) return; const c = closeness(s.raw, x.def); if(c > score){ score = c; best = x; } });
+      if(best && score >= 0.5) best.syns.forEach(w => { if(similar.indexOf(w) === -1) similar.push(w); });
+      if(similar.length >= 3) break;   // enough from the main meaning: the next ones mean other things
+    }
+    if(!similar.length && byPos[0]){
+      similar = byPos[0].senses[0].raw.split(';').slice(1).join(',').split(',').map(t => t.trim().replace(/[.)]+$/, '').replace(/^to /i, ''))
+        .filter(t => /^[a-z][a-z' -]{1,20}$/i.test(t) && t.split(' ').length <= 2);
+    }
+    similar = similar.filter(w => w.toLowerCase() !== word && w.toLowerCase() !== title).slice(0, 6);
+
     const dict = senses.length ? {
       senses: senses.map(s => ({ pos: s.pos, def: s.def, ex: (s.ex || '').replace(/^["“]+|["”]+$/g, ''), es: s.es || [], tags: s.tags || [] })),
       phonetic: (da && da.phonetic) || (dm && dm.ipa) || '',
@@ -375,7 +413,7 @@
       base: title !== word ? title : '',
       common: COMMON(dm ? dm.freq : 0)
     } : null;
-    const out = { word, dict, es, offline: false, dictFailed: !dict && (dm === null || !!(da && da.offline)) };
+    const out = { word, dict, es, similar, offline: false, dictFailed: !dict && (dm === null || !!(da && da.offline)) };
     if((dict || es.length) && !esFailed && dm !== null){
       cache[word] = out;
       const keys = Object.keys(cache);
@@ -449,10 +487,10 @@
 
   // words that mean nearly the same, from Datamuse (common ones only)
   async function similarTo(word){
-    const d = await getJson('https://api.datamuse.com/words?rel_syn=' + encodeURIComponent(word) + '&md=f&max=20', 5000);
+    const d = await getJson('https://api.datamuse.com/words?ml=' + encodeURIComponent(word) + '&md=f&max=20', 5000);
     if(!Array.isArray(d)) return [];
     const freq = x => +(((x.tags || []).find(t => t.startsWith('f:')) || 'f:0').slice(2));
-    return d.filter(x => freq(x) >= 0.1 && /^[a-z][a-z' -]*$/i.test(x.word)).sort((a, b) => freq(b) - freq(a)).slice(0, 6).map(x => x.word);
+    return d.filter(x => freq(x) >= 0.1 && /^[a-z][a-z' -]*$/i.test(x.word)).slice(0, 6).map(x => x.word);
   }
 
   async function look(word){
@@ -470,7 +508,8 @@
     paintCard();
     if(data.dict || data.es.length){
       remember(data.word);
-      if(!data.similar){
+      if(!(data.similar && data.similar.length) && !data.simTried){
+        data.simTried = true;
         const sim = await similarTo(data.dict && data.dict.base || data.word);
         data.similar = sim;
         if(cache[data.word]) store.set('cache2', cache);
@@ -889,9 +928,11 @@
     if(!f) return;
     let data = null;
     try{ data = JSON.parse(await f.text()); }catch(err){}
-    if(!data || !Array.isArray(data.items) || !/^word-pocket/.test(data.app || '')){ toast('That file is not a Word Pocket backup.'); return; }
+    if(!data || !Array.isArray(data.items) || !/^word-(pocket|catcher)/.test(data.app || '')){ toast('That file is not a Word Pocket or Word Catcher backup.'); return; }
     const have = new Set(items.map(x => x.word.toLowerCase()));
     let added = 0;
+    // Word Catcher keeps its flashcard levels apart, by word
+    if(data.srs) data.items.forEach(x => { const l = data.srs[String(x.word || '').toLowerCase()]; if(l && !x.box) Object.assign(x, l); });
     data.items.forEach(x => {
       if(!x || !x.word || have.has(String(x.word).toLowerCase())) return;
       items.push(Object.assign({ id: 'wp-' + Math.random().toString(36).slice(2, 10), savedAt: new Date().toISOString(), sent: false }, x));
