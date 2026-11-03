@@ -336,7 +336,8 @@
     return senses.slice().sort((a, b) => (a.special - b.special) || (sz(b) - sz(a)) || (a.i - b.i));
   }
 
-  const COMMON = f => f >= 100 ? 'very common' : f >= 10 ? 'common' : f >= 1 ? 'less common' : f > 0 ? 'rare' : '';
+  // uses per million words of text: 'grumpy' is 0.3, 'fast' 45, 'well' 443
+  const COMMON = f => f >= 50 ? 'very common' : f >= 5 ? 'common' : f >= 0.2 ? 'less common' : f > 0 ? 'rare' : '';
 
   async function lookup(word){
     word = String(word || '').toLowerCase().trim().replace(/\s+/g, ' ').slice(0, 60);
@@ -439,10 +440,26 @@
   };
   const caughtToday = () => items.filter(x => x.savedAt && dayKey(x.savedAt) === todayKey()).length;
 
+  // the words you looked up lately, saved or not
+  let history = store.get('history', []);
+  function remember(word){
+    history = [word].concat(history.filter(w => w !== word)).slice(0, 12);
+    store.set('history', history);
+  }
+
+  // words that mean nearly the same, from Datamuse (common ones only)
+  async function similarTo(word){
+    const d = await getJson('https://api.datamuse.com/words?rel_syn=' + encodeURIComponent(word) + '&md=f&max=20', 5000);
+    if(!Array.isArray(d)) return [];
+    const freq = x => +(((x.tags || []).find(t => t.startsWith('f:')) || 'f:0').slice(2));
+    return d.filter(x => freq(x) >= 0.1 && /^[a-z][a-z' -]*$/i.test(x.word)).sort((a, b) => freq(b) - freq(a)).slice(0, 6).map(x => x.word);
+  }
+
   async function look(word){
     word = String(word || '').trim();
     if(!word) return;
     $('q').value = word;
+    $('clear').hidden = false;
     $('q').blur();
     $('sugs').innerHTML = '';
     card = { data: null, enter: true };
@@ -451,6 +468,15 @@
     if(!card || card.data !== null) return;
     card = { data, enter: true, saved: savedFor(word), sentence: '' };
     paintCard();
+    if(data.dict || data.es.length){
+      remember(data.word);
+      if(!data.similar){
+        const sim = await similarTo(data.dict && data.dict.base || data.word);
+        data.similar = sim;
+        if(cache[data.word]) store.set('cache2', cache);
+        if(card && card.data === data && sim.length){ paintCard(); }
+      }
+    }
     if(!data.dict && !data.es.length && !data.offline){
       // not found: maybe it is spelt differently from how it sounded
       const [a, b] = await Promise.all([spellHelp(word, 'start'), spellHelp(word, 'sound')]);
@@ -492,6 +518,8 @@
             + (s.es && s.es.length ? '<span class="s-es">→ ' + s.es.map(esc).join(', ') + '</span>' : '')
             + (s.ex ? '<span class="ex">“' + esc(s.ex) + '”</span>' : '') + '</div></div>').join('') + '</div>'
             + (all.length > 3 ? '<button class="more" id="c-more">' + (card.more ? 'Fewer meanings' : 'More meanings (' + (Math.min(all.length, 6) - 3) + ')') + '</button>' : '') : '')
+        + (data.similar && data.similar.length ? '<div class="similar"><span>Similar</span>' + data.similar.map(w => '<button class="sug" data-w="'
+            + esc(w) + '">' + esc(w) + '</button>').join('') + '</div>' : '')
         + (data.dictFailed ? '<p class="note">The English meanings did not load. <button class="ghost" id="c-retry">Try again</button></p>' : '');
     }
     const canSave = found || data.offline;
@@ -577,7 +605,12 @@
 
   function paintRecent(){
     const last = items.slice(0, 8);
-    $('recent').innerHTML = todayCard() + (last.length
+    const savedWords = new Set(items.map(x => x.word.toLowerCase()));
+    const looked = history.filter(w => !savedWords.has(w.toLowerCase())).slice(0, 8);
+    $('recent').innerHTML = todayCard()
+      + (looked.length ? '<div class="recent-h">Recent searches <button class="link-btn" id="clear-history">Clear</button></div><div class="recent">'
+          + looked.map(w => '<button data-w="' + esc(w) + '">' + esc(w) + '</button>').join('') + '</div>' : '')
+      + (last.length
       ? '<div class="recent-h">Recently saved</div><div class="recent">' + last.map(x => '<button data-w="' + esc(x.word) + '">' + esc(x.word)
           + (x.es ? '<small>' + esc(x.es.split(',')[0]) + '</small>' : '') + '</button>').join('') + '</div>'
       : '<div class="empty"><b>Heard a word you don’t know?</b><br>Type it above, or tap the microphone and say it.'
@@ -585,12 +618,19 @@
     $('recent').querySelectorAll('.recent button').forEach(b => b.addEventListener('click', () => look(b.dataset.w)));
     const rv = $('tc-review');
     if(rv) rv.addEventListener('click', () => { show('practice'); startCards(false); });
+    const ch = $('clear-history');
+    if(ch) ch.addEventListener('click', () => { history = []; store.set('history', history); paintRecent(); });
   }
 
   // spelling suggestions while typing
   let sugTimer = null, sugFor = '';
+  $('clear').addEventListener('click', () => {
+    $('q').value = ''; $('clear').hidden = true; $('sugs').innerHTML = '';
+    card = null; paintCard(); $('q').focus();
+  });
   $('q').addEventListener('input', () => {
     const v = $('q').value.trim();
+    $('clear').hidden = !$('q').value;
     clearTimeout(sugTimer);
     if(v.length < 2){ $('sugs').innerHTML = ''; return; }
     sugTimer = setTimeout(async () => {
@@ -651,6 +691,9 @@
   function paintSendBox(){
     const unsent = items.filter(x => !x.sent).length;
     const box = $('send-box');
+    // only for someone with Word Log on their computer (a switch in Settings)
+    box.hidden = !settings.wordLog;
+    if(!settings.wordLog) return;
     box.classList.toggle('quiet', !unsent);
     box.innerHTML = unsent
       ? '<p><b>' + unsent + ' new word' + (unsent === 1 ? '' : 's') + ' for Word Log</b>Send them to your computer through OneDrive.</p>'
@@ -661,8 +704,19 @@
     if(b) b.addEventListener('click', () => sendToWordLog(items.filter(x => !x.sent)));
   }
 
+  // new (never reviewed), learning (boxes 1-3), mastered (box 4 or 5)
+  function paintMastery(){
+    const n = { fresh: 0, learning: 0, mastered: 0 };
+    items.forEach(x => { const b = x.box || 0; if(!b) n.fresh++; else if(b >= 4) n.mastered++; else n.learning++; });
+    $('mastery').hidden = !items.length;
+    $('mastery').innerHTML = '<div><b>' + n.fresh + '</b><small>🌱 new</small></div><div><b>' + n.learning + '</b><small>📘 learning</small></div>'
+      + '<div><b>' + n.mastered + '</b><small>🏆 mastered</small></div>';
+  }
+  const dots = x => '<span class="dots" title="Review level">' + [1, 2, 3, 4, 5].map(k => '<i class="' + (k <= (x.box || 0) ? 'on' : '') + '"></i>').join('') + '</span>';
+
   function paintList(){
     paintSendBox();
+    paintMastery();
     const q = $('filter').value.trim().toLowerCase();
     const shown = items.filter(x => !q || [x.word, x.es, x.meaning, x.sentence, x.source].join(' ').toLowerCase().includes(q));
     if(!shown.length){
@@ -686,7 +740,7 @@
     $('list').innerHTML = [...groups].map(([k, list]) => '<div class="group-h">' + label(k) + ' <span>' + list.length + '</span></div>'
       + list.map(x => '<div class="row" data-id="' + esc(x.id) + '" style="animation-delay:' + Math.min(n++, 12) * 25 + 'ms">'
         + '<div class="row-top"><span class="w">' + esc(x.word) + '</span><span class="es">' + esc(x.es || '') + '</span>'
-          + (x.pending ? '<span class="tag wait">no meaning yet</span>' : x.sent ? '<span class="tag sent">in Word Log</span>' : '')
+          + (x.pending ? '<span class="tag wait">no meaning yet</span>' : x.sent && settings.wordLog ? '<span class="tag sent">in Word Log</span>' : dots(x))
           + '<button class="say" data-w="' + esc(x.word) + '" aria-label="Listen">' + SPEAKER + '</button></div>'
         + '<div class="row-more">' + (x.meaning ? esc(x.meaning) : '')
           + (x.sentence ? '<div class="sent">“' + esc(x.sentence) + '”</div>' : '')
@@ -771,10 +825,19 @@
       + '<div class="set-group">'
         + '<button class="set-row link" id="set-source"><span><b>What you are watching</b><small>'
           + esc(settings.source ? sourceLabel(settings.source) : 'Nothing set') + '</small></span><i>›</i></button>'
-        + '<button class="set-row link" id="set-resend"><span><b>Send all my words to Word Log</b><small>'
-          + (unsent ? unsent + ' not sent yet · ' : '') + 'Also keeps a copy in your OneDrive</small></span><i>›</i></button>'
       + '</div>'
-      + '<p class="hint">Your words are kept on this phone.</p>'
+      + '<div class="set-label out">Your words</div>'
+      + '<div class="set-group">'
+        + '<button class="set-row link" id="set-export"><span><b>Save a backup</b><small>A file with all your words, to keep or move to a new phone</small></span><i>›</i></button>'
+        + '<button class="set-row link" id="set-import"><span><b>Bring words in</b><small>From a backup file</small></span><i>›</i></button>'
+      + '</div>'
+      + '<div class="set-group">'
+        + sw('set-wordlog', !!settings.wordLog, 'I use Word Log on my computer', 'Shows “Send to Word Log” in My words')
+        + (settings.wordLog ? '<button class="set-row link" id="set-resend"><span><b>Send all my words to Word Log</b><small>'
+          + (unsent ? unsent + ' not sent yet · ' : '') + 'Also keeps a copy in your OneDrive</small></span><i>›</i></button>' : '')
+      + '</div>'
+      + '<p class="hint">Your words are kept only on this phone. A backup now and then keeps them safe.</p>'
+      + '<button class="link-btn" id="set-welcome">How Word Pocket works</button>'
       + '<p class="hint legal">© 2026 Eduardo Cruz · Word Pocket. Free for personal, non-commercial use under the '
         + '<a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener">PolyForm Noncommercial License</a>. '
         + 'It may not be sold. All other rights reserved.</p>'
@@ -791,9 +854,83 @@
     $('set-sound').addEventListener('change', e => { settings.sound = e.target.checked; saveSettings(); if(e.target.checked) chime(); });
     $('set-vibrate').addEventListener('change', e => { settings.vibrate = e.target.checked; saveSettings(); if(e.target.checked) buzz(30); });
     $('set-source').addEventListener('click', () => { close(); setTimeout(openSourceSheet, 120); });
-    $('set-resend').addEventListener('click', () => { close(); sendToWordLog(items); });
+    const rs = $('set-resend');
+    if(rs) rs.addEventListener('click', () => { close(); sendToWordLog(items); });
+    $('set-wordlog').addEventListener('change', e => { settings.wordLog = e.target.checked; saveSettings(); openSettings(); paintList(); });
+    $('set-export').addEventListener('click', () => { close(); exportWords(); });
+    $('set-import').addEventListener('click', () => { close(); $('import-file').value = ''; $('import-file').click(); });
+    $('set-welcome').addEventListener('click', () => { close(); setTimeout(welcome, 150); });
   }
   $('gear').addEventListener('click', openSettings);
+
+  // --- backup: all your words in one file, and back again ------------------------
+  async function shareOrDownload(file, done){
+    if(navigator.canShare && navigator.canShare({ files: [file] })){
+      try{ await navigator.share({ files: [file], title: file.name }); done(true); }
+      catch(e){ if(e && e.name !== 'AbortError') toast('Could not share the file.'); }
+      return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file); a.download = file.name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    done(false);
+  }
+  function exportWords(){
+    if(!items.length){ toast('No words to save yet.'); return; }
+    const body = JSON.stringify({ app: 'word-pocket-backup', savedAt: new Date().toISOString(), items, stats,
+      days: store.get('days', []), sources, speedBest: store.get('speedBest', 0) }, null, 1);
+    const file = new File([body], 'word-pocket-backup-' + todayKey() + '.txt', { type: 'text/plain' });
+    shareOrDownload(file, shared => toast(shared ? 'Backup ready: keep the file somewhere safe (Drive, OneDrive, email…).'
+      : 'Backup downloaded: ' + file.name, 4500));
+  }
+  $('import-file').addEventListener('change', async e => {
+    const f = e.target.files && e.target.files[0];
+    if(!f) return;
+    let data = null;
+    try{ data = JSON.parse(await f.text()); }catch(err){}
+    if(!data || !Array.isArray(data.items) || !/^word-pocket/.test(data.app || '')){ toast('That file is not a Word Pocket backup.'); return; }
+    const have = new Set(items.map(x => x.word.toLowerCase()));
+    let added = 0;
+    data.items.forEach(x => {
+      if(!x || !x.word || have.has(String(x.word).toLowerCase())) return;
+      items.push(Object.assign({ id: 'wp-' + Math.random().toString(36).slice(2, 10), savedAt: new Date().toISOString(), sent: false }, x));
+      have.add(String(x.word).toLowerCase());
+      added++;
+    });
+    items.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+    if(data.stats) Object.keys(data.stats).forEach(k => { if(!stats[k]) stats[k] = data.stats[k]; });
+    if(Array.isArray(data.days)) store.set('days', [...new Set(store.get('days', []).concat(data.days))].sort().slice(-400));
+    if(data.speedBest > store.get('speedBest', 0)) store.set('speedBest', data.speedBest);
+    saveItems(); store.set('stats', stats);
+    paintCount(); paintGoal(); paintDue(); paintStreak(); paintList(); paintRecent();
+    toast(added ? 'Brought in ' + added + ' word' + (added === 1 ? '' : 's') + '.' : 'You already had all those words.', 3500);
+  });
+
+  // --- the first time: what it is, and how to keep it on the home screen --------
+  function welcome(){
+    const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone;
+    const ios = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    const sh = $('sheet');
+    sh.innerHTML = '<div class="sheet-in welcome">'
+      + '<img src="icons/icon-192.png" alt="" width="64" height="64">'
+      + '<h2>Welcome to Word Pocket</h2>'
+      + '<p class="w-sub">Catch the English words you hear in movies, series and songs.</p>'
+      + '<ol class="w-steps">'
+        + '<li><span>🎬</span><div><b>Say what you are watching</b>Every word you save remembers where you heard it.</div></li>'
+        + '<li><span>🔎</span><div><b>Look a word up</b>Type it or say it. Not sure how it is spelt? It suggests words that sound like it.</div></li>'
+        + '<li><span>⭐</span><div><b>Save it</b>With the Spanish, the meaning and the line you heard.</div></li>'
+        + '<li><span>🃏</span><div><b>Practise a little every day</b>Flashcards bring each word back just before you would forget it.</div></li>'
+      + '</ol>'
+      + (standalone ? '' : '<div class="w-install"><b>Keep it on your home screen</b>'
+          + (ios ? 'In Safari, tap <b>Share</b> <span class="ios-share">⬆︎</span> and then <b>Add to Home Screen</b>.'
+                 : 'In Chrome, tap <b>⋮</b> and then <b>Install app</b> (or <b>Add to Home screen</b>).') + '</div>')
+      + '<button class="btn wide" id="w-go">Let’s start</button></div>';
+    sh.hidden = false;
+    const go = () => { sh.hidden = true; settings.welcomed = true; saveSettings(); $('q').focus(); };
+    $('w-go').addEventListener('click', go);
+    sh.onclick = e => { if(e.target === sh) go(); };
+  }
 
   // Words saved offline get their meaning when the phone is back online.
   async function fillPending(){
@@ -880,7 +1017,7 @@
     stopTimer();
     game = null;
     const pool = playable().length, due = dueWords().length, best = store.get('speedBest', 0);
-    const mode = (id, icon, title, sub, locked, hot) => '<button class="mode' + (hot ? ' hot' : '') + '" data-mode="' + id + '"'
+    const mode = (id, icon, title, sub, locked, hot, wide) => '<button class="mode' + (hot ? ' hot' : '') + (wide ? ' wide' : '') + '" data-mode="' + id + '"'
       + (locked ? ' disabled' : '') + '><span class="m-icon">' + icon + '</span><b>' + title + '</b><small>' + sub + '</small></button>';
     const lock = pool < 4;
     $('game').innerHTML = '<div class="p-head"><h2>Practice</h2><span>' + items.length + ' word' + (items.length === 1 ? '' : 's') + ' in your pocket</span></div>'
@@ -889,12 +1026,14 @@
         + mode('quiz', '🎯', 'Quiz', lock ? 'Needs 4 words' : '8 questions', lock)
         + mode('listen', '🎧', 'Listen', lock ? 'Needs 4 words' : 'Hear it, find it', lock)
         + mode('speed', '⚡', 'Speed round', lock ? 'Needs 4 words' : best ? 'Best: ' + best : '60 seconds', lock)
+        + mode('spell', '✍️', 'Spell it', lock ? 'Needs 4 words' : 'See the Spanish, type the English', lock, false, true)
       + '</div>'
       + (lock ? '<p class="hint" style="text-align:center">Save ' + (4 - pool) + ' more word' + (4 - pool === 1 ? '' : 's') + ' to unlock the games.</p>' : '');
     $('game').querySelectorAll('.mode').forEach(b => b.addEventListener('click', () => {
       const m = b.dataset.mode;
       if(m === 'cards') startCards(false);
       else if(m === 'speed') startSpeed();
+      else if(m === 'spell') startSpell();
       else startQuiz(m);
     }));
   }
@@ -1143,7 +1282,7 @@
       + missedHtml(g)
       + '<div class="g-btns"><button class="btn" id="g-again">Play again</button><button class="ghost" id="g-menu">Practice</button></div></div>';
     const mode = g.mode;
-    $('g-again').addEventListener('click', () => startQuiz(mode));
+    $('g-again').addEventListener('click', () => mode === 'spell' ? startSpell() : startQuiz(mode));
     $('g-menu').addEventListener('click', practiceMenu);
     if(pct === 1) confetti();
     game = null;
@@ -1164,6 +1303,72 @@
     if(record) confetti();
     chime(true);
     game = null;
+  }
+
+  // --- Spell it: see the Spanish, type the English ---------------------------------
+  // Writing a word is the surest way to own it. The first letter and the
+  // length are given; one slip in a long word counts, and is shown.
+  function typo1(a, b){
+    if(Math.abs(a.length - b.length) > 1) return false;
+    let i = 0, j = 0, edits = 0;
+    while(i < a.length && j < b.length){
+      if(a[i] === b[j]){ i++; j++; continue; }
+      if(++edits > 1) return false;
+      if(a.length > b.length) i++; else if(b.length > a.length) j++; else { i++; j++; }
+    }
+    return edits + (a.length - i) + (b.length - j) <= 1;
+  }
+  function startSpell(){
+    const qs = shuffle(pick(playable(), 8));
+    game = { mode: 'spell', qs, i: 0, right: 0, combo: 0, best: 0, missed: [], locked: false };
+    paintSpell();
+  }
+  function paintSpell(){
+    const g = game, x = g.qs[g.i], w = x.word;
+    const hint = w.split('').map((c, k) => c === ' ' ? '<i class="gap"></i>' : '<i>' + (k === 0 ? esc(c) : '') + '</i>').join('');
+    $('game').innerHTML = '<div class="g-top"><button class="back" id="g-back" aria-label="Back">‹</button><div class="g-bar"><i style="width:'
+        + (g.i / g.qs.length * 100) + '%"></i></div><span class="g-combo" id="combo">' + (g.combo >= 2 ? '🔥 ' + g.combo : '') + '</span></div>'
+      + '<div class="g-card"><div class="g-ask">How do you say it in English?</div>'
+        + '<div class="g-q es">' + esc(firstEs(x)) + '</div>'
+        + (x.source ? '<div class="g-src">' + esc(x.source) + '</div>' : '')
+        + '<div class="sp-hint">' + hint + '</div>'
+        + '<form id="sp-form" class="sp-form" autocomplete="off"><input id="sp-in" autocapitalize="off" autocorrect="off" spellcheck="false" '
+          + 'enterkeyhint="done" placeholder="Type the word"><button class="btn" type="submit">Check</button></form>'
+        + '<div class="sp-tools"><button class="link-btn" id="sp-hear">🔊 Hear it</button><button class="link-btn" id="sp-skip">I don’t know</button></div>'
+        + '<div id="sp-out"></div></div>';
+    g.locked = false;
+    $('g-back').addEventListener('click', practiceMenu);
+    $('sp-hear').addEventListener('click', () => speak(w));
+    $('sp-skip').addEventListener('click', () => spellCheck(true));
+    $('sp-form').addEventListener('submit', e => { e.preventDefault(); spellCheck(false); });
+    setTimeout(() => { const i = $('sp-in'); if(i) i.focus(); }, 250);
+  }
+  function spellCheck(gaveUp){
+    const g = game;
+    if(!g || g.locked) return;
+    const x = g.qs[g.i], want = x.word.toLowerCase().trim();
+    const got = gaveUp ? '' : $('sp-in').value.toLowerCase().trim().replace(/\s+/g, ' ');
+    if(!gaveUp && !got) return;
+    g.locked = true;
+    const exact = got === want, close = !exact && want.length >= 5 && typo1(got, want), ok = exact || close;
+    const s = stats[x.id] = stats[x.id] || {};
+    if(ok){ g.right++; g.combo++; g.best = Math.max(g.best, g.combo); s.r = (s.r || 0) + 1; }
+    else{ g.combo = 0; g.missed.push(x); s.w = (s.w || 0) + 1; buzz([40, 60, 40]); }
+    s.t = Date.now(); store.set('stats', stats);
+    if(g.i === 0) markActive();
+    chime(ok); speak(x.word);
+    $('sp-in').disabled = true;
+    $('sp-in').classList.add(ok ? 'right' : 'wrong');
+    $('sp-out').innerHTML = '<div class="sp-res ' + (ok ? 'ok' : 'bad') + '">'
+      + (exact ? 'Perfect!' : close ? 'Almost! It is spelt <b>' + esc(x.word) + '</b>' : (gaveUp ? 'It is ' : 'Not quite: it is ') + '<b>' + esc(x.word) + '</b>')
+      + '</div>';
+    const c = $('combo');
+    c.textContent = g.combo >= 2 ? '🔥 ' + g.combo : '';
+    setTimeout(() => {
+      if(game !== g) return;
+      g.i++;
+      if(g.i < g.qs.length) paintSpell(); else paintEnd();
+    }, ok && exact ? 1100 : 2300);
   }
 
   // --- tabs and start -------------------------------------------------------------
@@ -1188,7 +1393,11 @@
     items.forEach(x => { if(x.savedAt) d.add(dayKey(x.savedAt)); });
     store.set('days', [...d].sort().slice(-400));
   })();
+  // Word Log is on for whoever already had words here (this app's owner);
+  // a friend opening it fresh does not see it until they turn it on
+  if(settings.wordLog === undefined){ settings.wordLog = items.length > 0; saveSettings(); }
   paintSource(); paintGoal(); paintCount(); paintStreak(); paintDue(); paintRecent();
+  if(!settings.welcomed){ if(items.length){ settings.welcomed = true; saveSettings(); } else setTimeout(welcome, 400); }
   if(navigator.onLine) fillPending();
 
   // works offline once it has been opened

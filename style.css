@@ -365,3 +365,60 @@ button.tc{ cursor:pointer; color:var(--text); font:inherit; }
 .common.c-common{ color:#7FB2FF; border-color:#2A3F5A; }
 .common.c-less-common{ color:var(--yellow); border-color:#5A4A1F; }
 .common.c-rare{ color:#E58AD1; border-color:#5A2A50; }
+
+/* --- search: clear button, recent searches, similar words ------------------- */
+.clear{ position:absolute; right:56px; top:50%; transform:translateY(-50%); width:30px; height:30px; border-radius:50%; border:none;
+  background:var(--panel2); color:var(--soft); font-size:20px; line-height:1; cursor:pointer; }
+.search input{ padding-right:94px; }
+.link-btn{ border:none; background:none; color:var(--yellow); font:inherit; font-size:13px; font-weight:700; cursor:pointer; padding:4px 0; }
+.recent-h{ display:flex; align-items:center; justify-content:space-between; }
+.similar{ display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:12px; padding-top:10px; border-top:1px solid var(--rule); }
+.similar > span{ font-size:12px; color:var(--soft); text-transform:uppercase; letter-spacing:.05em; margin-right:2px; }
+.similar .sug{ padding:4px 11px; font-size:13.5px; }
+
+/* --- my words: how far along ------------------------------------------------- */
+.mastery{ display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; margin-top:12px; }
+.mastery div{ background:var(--panel); border:1px solid var(--rule); border-radius:12px; padding:8px 4px; text-align:center; }
+.mastery b{ display:block; font-size:18px; }
+.mastery small{ color:var(--soft); font-size:12px; }
+.dots{ display:inline-flex; gap:3px; flex-shrink:0; }
+.dots i{ width:6px; height:6px; border-radius:50%; background:var(--rule); }
+.dots i.on{ background:var(--good); }
+
+/* --- settings: section label, welcome --------------------------------------- */
+.set-label.out{ font-size:12px; color:var(--soft); text-transform:uppercase; letter-spacing:.06em; margin:4px 2px 6px; }
+.welcome{ text-align:center; }
+.welcome img{ border-radius:16px; margin-top:4px; }
+.welcome h2{ margin:10px 0 2px; font-size:22px; }
+.w-sub{ color:var(--soft); margin:0 0 12px; }
+.w-steps{ list-style:none; padding:0; margin:0 0 12px; text-align:left; }
+.w-steps li{ display:flex; gap:12px; align-items:flex-start; padding:9px 0; border-top:1px solid var(--rule); animation:pop-in .3s ease-out both; }
+.w-steps li:nth-child(2){ animation-delay:.08s; } .w-steps li:nth-child(3){ animation-delay:.16s; } .w-steps li:nth-child(4){ animation-delay:.24s; }
+.w-steps span{ font-size:22px; }
+.w-steps b{ display:block; }
+.w-steps div{ color:var(--soft); font-size:14px; }
+.w-steps div b{ color:var(--text); font-size:15px; }
+.w-install{ background:var(--bg); border:1px dashed #5A4A1F; border-radius:12px; padding:10px 12px; font-size:14px; color:var(--soft); margin-bottom:14px; }
+.w-install > b:first-child{ display:block; color:var(--yellow); margin-bottom:2px; }
+.ios-share{ display:inline-block; border:1px solid var(--soft); border-radius:4px; padding:0 4px; font-size:12px; }
+.btn.wide{ width:100%; }
+
+/* --- spell it ------------------------------------------------------------------- */
+.mode.wide{ grid-column:1 / -1; flex-direction:row; align-items:center; gap:12px; }
+.mode.wide .m-icon{ margin:0; }
+.mode.wide b{ display:block; }
+.sp-hint{ display:flex; justify-content:center; flex-wrap:wrap; gap:5px; margin:14px 0 6px; }
+.sp-hint i{ font-style:normal; width:22px; height:30px; border-bottom:3px solid var(--rule); font-size:20px; font-weight:800; color:var(--yellow);
+  display:flex; align-items:flex-end; justify-content:center; }
+.sp-hint i.gap{ border:none; width:10px; }
+.sp-form{ display:flex; gap:8px; margin-top:12px; }
+.sp-form input{ flex:1; min-width:0; padding:13px 14px; border-radius:12px; border:1.5px solid var(--rule); background:var(--bg); color:var(--text);
+  font-size:18px; outline:none; text-align:center; }
+.sp-form input:focus{ border-color:var(--yellow); }
+.sp-form input.right{ border-color:var(--good); color:var(--good); animation:right .4s; }
+.sp-form input.wrong{ border-color:var(--bad); color:#F2A0A0; animation:shake .4s; }
+.sp-tools{ display:flex; justify-content:space-between; margin-top:8px; }
+.sp-res{ margin-top:12px; padding:10px; border-radius:12px; font-size:16px; animation:pop-in .25s ease-out; }
+.sp-res.ok{ background:#17301F; color:var(--good); }
+.sp-res.bad{ background:#3A1F22; color:#F2A0A0; }
+.sp-res b{ color:var(--text); }

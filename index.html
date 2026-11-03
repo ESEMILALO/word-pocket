@@ -35,6 +35,7 @@
       <button class="source" id="source"><span class="clap">&#127916;</span> <span id="source-name">What are you watching?</span></button>
       <form id="look" class="search" autocomplete="off">
         <input id="q" type="search" inputmode="search" placeholder="A word you heard…" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+        <button type="button" id="clear" class="clear" aria-label="Clear" hidden>×</button>
         <button type="button" id="mic" class="mic" aria-label="Say the word" hidden>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
         </button>
@@ -47,6 +48,7 @@
     <!-- My words -->
     <section id="view-words" class="view" hidden>
       <div class="send-box" id="send-box"></div>
+      <div class="mastery" id="mastery"></div>
       <input id="filter" class="filter" type="search" placeholder="Search your words" autocomplete="off" spellcheck="false">
       <div class="groupby"><button data-g="source" class="on">By movie or show</button><button data-g="day">By day</button></div>
       <div id="list"></div>
@@ -68,6 +70,7 @@
   </nav>
 
   <div id="sheet" class="sheet" hidden></div>
+  <input type="file" id="import-file" accept=".txt,.json,text/plain,application/json" hidden>
   <div id="toast" class="toast" hidden></div>
 
   <script src="app.js"></script>

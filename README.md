@@ -9,7 +9,10 @@ movies, series, songs and videos. It goes with Word Log on the computer.
   the English meanings by kind (noun, verb...) with examples, and the sound.
 - **🎬 What are you watching?**: tap it once and every word you save is
   kept with that movie or show. "What did they say?" keeps the line you heard.
-- **My words**: grouped by movie/show or by day. Tap a word to open it.
+- **Similar words** on each card, your **recent searches** under the search
+  box, and a × to clear it.
+- **My words**: grouped by movie/show or by day, with how far along you are
+  (new · learning · mastered) and a level line on each word.
 - **Practice**, four ways:
   - **Flashcards**: tap to turn the card, swipe right if you know the word,
     left to see it again. Spaced repetition brings each word back after 1, 3,
@@ -17,6 +20,8 @@ movies, series, songs and videos. It goes with Word Log on the computer.
   - **Quiz**: eight questions (meaning, word, the line you heard, listening).
   - **Listen**: hear the word, find it.
   - **Speed round**: as many as you can in 60 seconds. Beat your record.
+  - **Spell it**: see the Spanish, type the English (first letter and length
+    as a hint; one slip in a long word counts as almost right).
 - **🔥 Streak**: the days in a row you saved or practised a word.
 - **The ring** at the top is today's goal (change it in My words → Settings).
 - **Several dictionaries, one clear answer.** No AI, no account; only the
@@ -32,6 +37,18 @@ movies, series, songs and videos. It goes with Word Log on the computer.
   out; specialist meanings (finance, computing...) go last.
 - Works **without internet** once opened: a word saved offline gets its
   meaning when the phone is online again.
+
+## Settings (the gear) and your words
+
+Daily goal, sounds, vibration, what you are watching, and:
+
+- **Save a backup**: one file with all your words (and your progress), to
+  keep safe or to move to a new phone. **Bring words in** reads it back,
+  adding only the words you do not have yet.
+- **I use Word Log on my computer**: shows "Send to Word Log". It is on for
+  the phone that already had words; a friend opening the app fresh does not
+  see it. The first time anyone opens the app, a short welcome explains it
+  and how to put it on the home screen.
 
 ## Your words go to Word Log
 
