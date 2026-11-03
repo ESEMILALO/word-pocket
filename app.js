@@ -31,7 +31,7 @@
   let items = store.get('items', []);
   let settings = Object.assign({ goal: 5, source: null, groupBy: 'source', installHidden: false }, store.get('settings', {}));
   let sources = store.get('sources', []);          // recent [{name, kind}]
-  let cache = store.get('cache', {});              // word -> lookup
+  let cache = store.get('cache2', {});             // word -> lookup (cache2: answers from several dictionaries)
   let stats = store.get('stats', {});              // id -> {r, w, t}
 
   const saveItems = () => store.set('items', items);
@@ -181,19 +181,205 @@
       .filter(w => /^[a-z][a-z' -]*$/i.test(w)).slice(0, 8);
   }
 
+  // --- several dictionaries, one clear answer -----------------------------------
+  // Each source does what it does best:
+  //   Datamuse       short definitions with their labels (dated, finance, slang),
+  //                  the kinds of word in order of use, how common the word is
+  //   Wiktionary     an example for each meaning, and the Spanish for each
+  //                  meaning -- and how many languages translate a meaning,
+  //                  which is the best sign of how much it is used
+  //   dictionaryapi  the pronunciation and a recording; meanings when the
+  //                  others have none
+  //   MyMemory       the Spanish, only when Wiktionary has none
+  // Old, rare and dialect meanings are left out; specialist ones go last.
+  const POS_NAME = { n: 'noun', v: 'verb', adj: 'adjective', adv: 'adverb' };
+  const DROP = /\b(obsolete|archaic|dated|rare|historical|dialect(al)?|nonstandard|poetic|obsolescent|uncommon|eye dialect|misspelling|proscribed|humorous)\b/i;
+  const SHOW = /^(informal|colloquial|slang|vulgar|offensive|derogatory|formal|literary|US|UK|British|American|figuratively|idiomatic)$/i;
+  const SKIP = /^(transitive|intransitive|ambitransitive|countable|uncountable|reflexive|ergative|usually|often|with|of |in |by |plural|singular|attributive|predicative|manner|degree|now|especially|chiefly|also|sometimes|followed|not comparable|comparable|copulative|auxiliary|modal|impersonal|stative|Ireland|Scotland|Commonwealth|Australia|New Zealand|Canada|India|South Africa|Northern England|Caribbean|Philippines|Singapore|Hong Kong|euphemistic)/i;
+  const NAMES = /^(an? |the )?(surname|(male|female|unisex) given name|placename|place name|(small )?(river|town|city|village|county|commune|municipality|island|lake|mountain|community|census-designated place|hamlet|suburb|neighbourhood|district|region|state|province|ghost town|unincorporated community)\b)/i;
+  const JUNK = /^(alternative (form|spelling|case form) of|synonym of|obsolete (form|spelling) of|(nonstandard|archaic|dated) (form|spelling) of|plural of|simple past|past participle|present participle|third-person|used other than|misspelling of|abbreviation of|initialism of|acronym of|clipping of|contraction of|ellipsis of|eye dialect|en dash|$)/i;
+
+  const clean = html => String(html || '').replace(/<style[\s\S]*?<\/style>/gi, '').replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/\s+/g, ' ').trim();
+  const norm = s => String(s || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim().slice(0, 50);
+
+  // "adj\t(dated, finance) Text." -> { pos, def, tags, special }
+  function senseFrom(raw){
+    const tab = raw.indexOf('\t');
+    const pos = POS_NAME[raw.slice(0, tab)] || raw.slice(0, tab);
+    let text = raw.slice(tab + 1).trim();
+    const labels = [];
+    let m;
+    while((m = text.match(/^\(([^()]*)\)\s*/))){
+      m[1].split(/,\s*|\s+or\s+|\s+and\s+/).map(s => s.trim()).filter(Boolean).forEach(l => labels.push(l));
+      text = text.slice(m[0].length);
+    }
+    if(JUNK.test(text) || NAMES.test(text) || DROP.test(labels.join(', ')) || /^\(?(now )?(rare|archaic|obsolete)\b/i.test(text)) return null;
+    const shown = labels.filter(l => SHOW.test(l)).map(l => l.toLowerCase().replace('figuratively', 'figurative'));
+    const domains = labels.filter(l => !SHOW.test(l) && !SKIP.test(l) && l.length < 26);
+    return { pos, def: short(text.replace(/\s+$/, '')), raw: text, tags: domains.concat(shown).slice(0, 2), special: domains.length > 0 };
+  }
+
+  async function fromDatamuse(word){
+    const d = await getJson('https://api.datamuse.com/words?sp=' + encodeURIComponent(word) + '&md=dpfr&ipa=1&max=1', 6000);
+    if(d === null) return null;
+    const x = Array.isArray(d) && d[0] && d[0].word.toLowerCase() === word ? d[0] : null;
+    if(!x) return { senses: [], posOrder: [], freq: 0 };
+    const tags = x.tags || [];
+    const tag = p => (tags.find(t => t.startsWith(p)) || '').slice(p.length);
+    return {
+      senses: (x.defs || []).map(senseFrom).filter(Boolean),
+      posOrder: tags.filter(t => POS_NAME[t]).map(t => POS_NAME[t]),
+      freq: +tag('f:') || 0,
+      ipa: tag('ipa_pron:') ? '/' + tag('ipa_pron:') + '/' : '',
+      base: x.defHeadword || ''
+    };
+  }
+
+  // Wiktionary's definitions page: an example for each meaning (and the
+  // meanings themselves, when Datamuse has none)
+  async function fromWiktionary(title){
+    const d = await getJson('https://en.wiktionary.org/api/rest_v1/page/definition/' + encodeURIComponent(title.replace(/ /g, '_')), 7000);
+    if(!d || !Array.isArray(d.en)) return { examples: {}, senses: [] };
+    const examples = {}, senses = [];
+    d.en.forEach(e => (e.definitions || []).forEach(x => {
+      const def = clean(x.definition);
+      if(!def || JUNK.test(def) || NAMES.test(def)) return;
+      const ex = (x.examples || []).map(clean).find(t => t && t.length < 170);
+      if(ex) examples[norm(def)] = ex;
+      senses.push({ pos: String(e.partOfSpeech || '').toLowerCase(), def: short(def), raw: def, tags: [], special: false });
+    }));
+    return { examples, senses };
+  }
+
+  // Wiktionary's translation tables: for each meaning of the word, how many
+  // languages translate it, and its Spanish.
+  async function wikitext(title){
+    const d = await getJson('https://en.wiktionary.org/w/api.php?action=parse&format=json&origin=*&prop=wikitext&redirects=1&page='
+      + encodeURIComponent(title), 7000);
+    return d && d.parse && d.parse.wikitext ? d.parse.wikitext['*'] : '';
+  }
+  function englishPart(t){
+    const i = t.search(/^==English==\s*$/m);
+    if(i < 0) return t;
+    const rest = t.slice(i + 11), j = rest.search(/^==[^=]/m);
+    return j < 0 ? rest : rest.slice(0, j);
+  }
+  function tablesIn(text){
+    const out = [];
+    let pos = '', cur = null;
+    englishPart(text).split('\n').forEach(line => {
+      const h = line.match(/^===+\s*([A-Za-z ]+?)\s*===+\s*$/);
+      if(h && /^(noun|verb|adjective|adverb|phrasal verb|phrase|idiom|interjection|preposition|pronoun|conjunction)$/i.test(h[1])) pos = h[1].toLowerCase();
+      const top = line.match(/^\{\{trans-top(?:-also)?\|(.*)\}\}\s*$/);
+      if(top){
+        const gloss = top[1].split('|').filter(p => !/^[a-z]+=/.test(p)).join(' ');
+        cur = { pos, gloss, size: 0, es: [] };
+        return;
+      }
+      if(!cur) return;
+      if(/^\{\{trans-bottom\}\}/.test(line)){ out.push(cur); cur = null; return; }
+      if(/^\*[^:*]/.test(line)) cur.size++;
+      if(/^\*:?\s*Spanish:/.test(line) || (cur.inEs && /^\*:/.test(line))){
+        cur.inEs = /^\*\s*Spanish:/.test(line) || cur.inEs;
+        let m;
+        const re = /\{\{tt?\+?\|es\|([^|}]+)/g;
+        while((m = re.exec(line))) if(cur.es.indexOf(m[1]) === -1) cur.es.push(m[1]);
+      } else if(/^\*[^:]/.test(line)) cur.inEs = false;
+    });
+    return out;
+  }
+  // the word as it is listed: "meanders" -> "meander", "ran" -> "run"
+  function baseIn(text){
+    const t = englishPart(text);
+    if(/\{\{(trans-top|see translation subpage|trans-see)/.test(t)) return '';
+    const defs = t.split(/\n/).filter(l => /^#\s/.test(l));
+    if(!defs.length || !defs.every(l => /\{\{[a-z -]*\bof\||\{\{en-[a-z -]+\|/i.test(l))) return '';
+    const m = t.match(/\{\{(?:[a-z -]*\bof|en-(?:third-person singular|past|simple past|present participle|plural noun)[a-z -]*)\|(?:en\|)?([^|}]+)/i);
+    return m ? m[1].trim() : '';
+  }
+  async function translationTables(title, text){
+    let tables = tablesIn(text);
+    // very common words keep their translations on a page of their own
+    if(/\{\{(see translation subpage|trans-see)/.test(text)) tables = tables.concat(tablesIn(await wikitext(title + '/translations')));
+    return tables;
+  }
+
+  const STOP = new Set('the and for with that this which who from into something someone one its their his her used especially other than more most such being have has are was were not any some way kind'.split(' '));
+  const toks = s => (String(s).toLowerCase().match(/[a-z]+/g) || []).filter(w => w.length > 2 && !STOP.has(w)).map(w => w.replace(/(ing|ed|es|s|ly)$/, ''));
+  function closeness(def, gloss){
+    const A = new Set(toks(def)), B = toks(gloss);
+    if(!B.length) return 0;
+    let n = 0;
+    B.forEach(w => { if(A.has(w)) n++; });
+    return n / Math.min(B.length, 4);
+  }
+
+  // The meanings of one kind of word, the most used first: an everyday
+  // meaning before a specialist one, then meanings translated into many
+  // languages before the rest, then the dictionary's own order.
+  function rank(senses, tables, examples){
+    const used = new Set();
+    senses.forEach((s, i) => {
+      s.i = i;
+      s.ex = s.ex || examples[norm(s.raw)] || '';
+      let best = null, score = 0;
+      tables.forEach((t, k) => {
+        if(t.pos && s.pos && t.pos !== s.pos && !(t.pos === 'phrasal verb' && s.pos === 'verb')) return;
+        const c = closeness(s.raw, t.gloss) - (used.has(k) ? 0.3 : 0);
+        if(c > score){ score = c; best = k; }
+      });
+      if(best !== null && score >= 0.5){ used.add(best); s.es = tables[best].es.slice(0, 2); s.size = tables[best].size; }
+      else { s.es = []; s.size = 0; }
+    });
+    const sz = s => s.size >= 8 ? s.size : 0;
+    return senses.slice().sort((a, b) => (a.special - b.special) || (sz(b) - sz(a)) || (a.i - b.i));
+  }
+
+  const COMMON = f => f >= 100 ? 'very common' : f >= 10 ? 'common' : f >= 1 ? 'less common' : f > 0 ? 'rare' : '';
+
   async function lookup(word){
     word = String(word || '').toLowerCase().trim().replace(/\s+/g, ' ').slice(0, 60);
     if(cache[word]) return cache[word];
-    const [dict, es] = await Promise.all([fromDictionary(word), toSpanish(word)]);
-    const out = { word, dict: dict && !dict.missing && !dict.offline ? dict : null, es: es || [],
-                  offline: !!(dict && dict.offline) && es === null,
-                  dictFailed: !!(dict && dict.offline) };
-    // a half answer is not kept, so the next look-up tries again
-    if((out.dict || out.es.length) && !out.dictFailed && es !== null){
+    const [dm, da, text0] = await Promise.all([fromDatamuse(word), fromDictionary(word), wikitext(word)]);
+    if(dm === null && da && da.offline) return { word, dict: null, es: [], offline: true };
+    // the word as listed, for the pages that only describe that one
+    const base = (dm && dm.base) || baseIn(text0) || (dm && dm.senses.length ? '' : (da && da.base)) || '';
+    const title = base && base !== word ? base : word;
+    const [wk, text] = await Promise.all([fromWiktionary(title), title === word ? text0 : wikitext(title)]);
+    const tables = await translationTables(title, text);
+
+    // the meanings: Datamuse's labelled ones, else Wiktionary's, else dictionaryapi's
+    let senses = dm && dm.senses.length ? dm.senses
+      : wk.senses.length ? wk.senses
+      : (da && da.senses ? da.senses.map(s => ({ pos: s.pos, def: s.def, raw: s.def, ex: s.ex, tags: [], special: false })) : []);
+    const order = (dm && dm.posOrder.length ? dm.posOrder : []).concat(senses.map(s => s.pos)).filter((p, i, a) => a.indexOf(p) === i);
+    const byPos = order.map(p => ({ pos: p, senses: rank(senses.filter(s => s.pos === p), tables, wk.examples) })).filter(g => g.senses.length);
+    // "fast" is listed adverb first, but its adjective is far more translated
+    const top = g => Math.max(0, ...g.senses.map(s => s.size || 0));
+    const lead = byPos.slice(1).reduce((b, g) => top(g) > top(b) ? g : b, byPos[0]);
+    if(lead && lead !== byPos[0] && top(lead) >= 1.5 * Math.max(top(byPos[0]), 1)){ byPos.splice(byPos.indexOf(lead), 1); byPos.unshift(lead); }
+    senses = [].concat(...byPos.map(g => g.senses));
+
+    // the Spanish: of the most used meaning, else the biggest table, else MyMemory
+    let es = (byPos[0] && byPos[0].senses.find(s => s.es.length) || {}).es || [];
+    if(!es.length){ const big = tables.filter(t => t.es.length).sort((a, b) => b.size - a.size)[0]; if(big) es = big.es.slice(0, 3); }
+    let esFailed = false;
+    if(!es.length){ const mm = await toSpanish(title); if(mm === null) esFailed = true; else es = mm; }
+
+    const dict = senses.length ? {
+      senses: senses.map(s => ({ pos: s.pos, def: s.def, ex: (s.ex || '').replace(/^["“]+|["”]+$/g, ''), es: s.es || [], tags: s.tags || [] })),
+      phonetic: (da && da.phonetic) || (dm && dm.ipa) || '',
+      audio: (da && da.audio) || '',
+      base: title !== word ? title : '',
+      common: COMMON(dm ? dm.freq : 0)
+    } : null;
+    const out = { word, dict, es, offline: false, dictFailed: !dict && (dm === null || !!(da && da.offline)) };
+    if((dict || es.length) && !esFailed && dm !== null){
       cache[word] = out;
       const keys = Object.keys(cache);
       if(keys.length > 300) keys.slice(0, keys.length - 300).forEach(k => delete cache[k]);
-      store.set('cache', cache);
+      store.set('cache2', cache);
     }
     return out;
   }
@@ -283,7 +469,8 @@
     const { data } = card, d = data.dict || {};
     const ks = kindsOf(d);
     const pos = ks.indexOf(card.pos) !== -1 ? card.pos : ks[0];
-    const senses = (d.senses || []).filter(s => s.pos === pos).slice(0, 3);
+    const all = (d.senses || []).filter(s => s.pos === pos);
+    const senses = all.slice(0, card.more ? 6 : 3);
     const found = data.dict || data.es.length;
     let body = '';
     if(data.offline){
@@ -298,9 +485,13 @@
         + (data.es.length ? '<div class="c-es">' + data.es.map(esc).join(' · ') + '</div>' : '')
         + (ks.length > 1 ? '<div class="chips">' + ks.map(k => '<button class="chip' + (k === pos ? ' on' : '') + '" data-pos="' + esc(k) + '">'
             + esc(k) + '</button>').join('') + '</div>' : '')
-        + (senses.length ? '<div class="senses' + (card.enter || card.switched ? ' anim' : '') + '">' + senses.map(s => '<div class="sense">'
-            + (ks.length > 1 ? '' : '<span class="tag">' + esc(s.pos) + '</span> ') + esc(s.def)
-            + (s.ex ? '<span class="ex">“' + esc(s.ex) + '”</span>' : '') + '</div>').join('') + '</div>' : '')
+        + (senses.length ? '<div class="senses' + (card.enter || card.switched ? ' anim' : '') + '">' + senses.map((s, n) => '<div class="sense">'
+            + '<span class="s-n">' + (n + 1) + '</span><div class="s-body">'
+            + (ks.length > 1 ? '' : '<span class="tag">' + esc(s.pos) + '</span> ')
+            + (s.tags || []).map(t => '<span class="tag lbl">' + esc(t) + '</span> ').join('') + esc(s.def)
+            + (s.es && s.es.length ? '<span class="s-es">→ ' + s.es.map(esc).join(', ') + '</span>' : '')
+            + (s.ex ? '<span class="ex">“' + esc(s.ex) + '”</span>' : '') + '</div></div>').join('') + '</div>'
+            + (all.length > 3 ? '<button class="more" id="c-more">' + (card.more ? 'Fewer meanings' : 'More meanings (' + (Math.min(all.length, 6) - 3) + ')') + '</button>' : '') : '')
         + (data.dictFailed ? '<p class="note">The English meanings did not load. <button class="ghost" id="c-retry">Try again</button></p>' : '');
     }
     const canSave = found || data.offline;
@@ -311,7 +502,8 @@
     box.innerHTML = '<div class="card' + (card.enter ? ' enter' : '') + '">'
       + '<div class="c-head"><span class="c-word">' + esc(data.word) + '</span>'
         + (d.phonetic ? '<span class="c-pron">' + esc(d.phonetic) + '</span>' : '')
-        + '<button class="say" id="c-say" aria-label="Listen">' + SPEAKER + '</button></div>'
+        + '<button class="say" id="c-say" aria-label="Listen">' + SPEAKER + '</button>'
+        + (d.common ? '<span class="common c-' + d.common.replace(' ', '-') + '">' + d.common + '</span>' : '') + '</div>'
       + body
       + (canSave && !card.saved ? '<input class="heard" id="heard" placeholder="What did they say? (optional)" value="' + esc(card.sentence || '') + '">' : '')
       + (card.saved && card.saved.sentence ? '<p class="note">“' + esc(card.saved.sentence) + '”</p>' : '')
@@ -326,7 +518,9 @@
 
     const say = $('c-say');
     if(say) say.addEventListener('click', () => play(data, say));
-    box.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { card.pos = b.dataset.pos; card.switched = true; paintCard(); }));
+    box.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => { card.pos = b.dataset.pos; card.more = false; card.switched = true; paintCard(); }));
+    const more = $('c-more');
+    if(more) more.addEventListener('click', () => { card.more = !card.more; card.switched = card.more; paintCard(); });
     box.querySelectorAll('.sug').forEach(b => b.addEventListener('click', () => look(b.dataset.w)));
     const retry = $('c-retry');
     if(retry) retry.addEventListener('click', () => { delete cache[data.word]; look(data.word); });
@@ -345,7 +539,7 @@
   function itemFrom(data, sentence){
     const d = data.dict || {};
     const byPos = {};
-    (d.senses || []).forEach(s => { if(!byPos[s.pos]) byPos[s.pos] = s.def.replace(/[.;]\s*$/, ''); });
+    (d.senses || []).forEach(s => { if(!byPos[s.pos]) byPos[s.pos] = s.def.replace(/[.;]\s*$/, '') + (s.es && s.es.length ? ' (' + s.es[0] + ')' : ''); });
     return {
       id: 'wp-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
       word: d.base || data.word,

@@ -19,8 +19,17 @@ movies, series, songs and videos. It goes with Word Log on the computer.
   - **Speed round**: as many as you can in 60 seconds. Beat your record.
 - **🔥 Streak**: the days in a row you saved or practised a word.
 - **The ring** at the top is today's goal (change it in My words → Settings).
-- **No AI**, no account. Meanings come from free services (dictionaryapi.dev,
-  MyMemory, Datamuse); only the word you look up is sent to them.
+- **Several dictionaries, one clear answer.** No AI, no account; only the
+  word you look up is sent to these free services:
+  - **Datamuse**: short definitions with labels (informal, finance...), the
+    kinds of word in order of use, and how common the word is.
+  - **Wiktionary**: an example and the Spanish for each meaning. How many
+    languages translate a meaning shows how much it is used, so the most
+    used meanings come first.
+  - **dictionaryapi.dev**: the pronunciation and a recording.
+  - **MyMemory**: the Spanish, only when Wiktionary has none.
+  Old, rare and dialect meanings, and names of people and places, are left
+  out; specialist meanings (finance, computing...) go last.
 - Works **without internet** once opened: a word saved offline gets its
   meaning when the phone is online again.
 
