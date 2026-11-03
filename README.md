@@ -30,9 +30,9 @@ a copy in OneDrive.
 
 ## Where it lives
 
-The code is in the private GitHub repository `word-pocket`. Netlify (free)
-publishes it at your own address, and updates it by itself whenever the
-repository changes.
+The code is in the public GitHub repository `ESEMILALO/word-pocket` (only the
+app's code: your words are never in it). It is published as a website at
+your own address, which updates by itself whenever the repository changes.
 
 ## On your phone (once)
 
