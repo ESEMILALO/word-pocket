@@ -32,11 +32,13 @@ a copy in OneDrive.
 
 The code is in the public GitHub repository `ESEMILALO/word-pocket` (only the
 app's code: your words are never in it). It is published as a website at
-your own address, which updates by itself whenever the repository changes.
+your own address, which updates by itself whenever the repository changes:
+
+**https://esemilalo.github.io/word-pocket/** (GitHub Pages, free)
 
 ## On your phone (once)
 
-- **iPhone (Safari)**: open your Netlify address, tap **Share** → **Add to
+- **iPhone (Safari)**: open the address above, tap **Share** → **Add to
   Home Screen**.
 - **Android (Chrome)**: open the address, tap **⋮** → **Install app** (or
   **Add to Home screen**).
@@ -45,6 +47,6 @@ It then opens from its own icon, full screen, like any other app.
 
 ## Changing it
 
-Edit the files here, then commit and push to `word-pocket`: Netlify publishes
-the new version within a minute, and the phone gets it the next time the app
+Edit the files here, then commit and push to `word-pocket`: GitHub Pages
+publishes the new version within a minute or two, and the phone gets it the next time the app
 opens online. `make_icons.py` redraws the icons.
