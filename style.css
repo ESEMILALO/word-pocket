@@ -310,3 +310,5 @@ button.tc{ cursor:pointer; color:var(--text); font:inherit; }
 .g-sec{ font-weight:800; font-variant-numeric:tabular-nums; min-width:26px; text-align:right; }
 .g-score-now{ background:var(--yellow); color:#1B1F27; border-radius:999px; padding:1px 10px; font-weight:900; min-width:34px; text-align:center; }
 .g-card.quick{ animation:g-in .18s ease-out; }
+.legal{ margin-top:18px; font-size:12px; line-height:1.5; }
+.legal a{ color:var(--soft); }

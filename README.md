@@ -52,6 +52,13 @@ your own address, which updates by itself whenever the repository changes:
 
 It then opens from its own icon, full screen, like any other app.
 
+## Copyright and license
+
+© 2026 Eduardo Cruz. Word Pocket is free to use, study, change and share
+for **non-commercial** purposes under the
+[PolyForm Noncommercial License 1.0.0](LICENSE.md). It may **not** be sold
+or used in any paid or commercial product. All other rights are reserved.
+
 ## Changing it
 
 Edit the files here, then commit and push to `word-pocket`: GitHub Pages

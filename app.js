@@ -1,3 +1,6 @@
+// © 2026 Eduardo Cruz. PolyForm Noncommercial License 1.0.0 (see LICENSE.md):
+// free for non-commercial use, not for sale. All other rights reserved.
+//
 // Word Pocket: a pocket dictionary for the words you hear in movies,
 // series, songs... Look a word up, save it with what you were watching,
 // practise it, and send it to Word Log on the computer.
