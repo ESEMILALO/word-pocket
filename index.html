@@ -25,6 +25,7 @@
       <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="ring-bg"/><circle cx="18" cy="18" r="15" class="ring-fg" id="ring"/></svg>
       <b id="goal-num">0</b>
     </button>
+    <button class="gear" id="gear" aria-label="Settings"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg></button>
     </div>
   </header>
 
@@ -49,14 +50,6 @@
       <input id="filter" class="filter" type="search" placeholder="Search your words" autocomplete="off" spellcheck="false">
       <div class="groupby"><button data-g="source" class="on">By movie or show</button><button data-g="day">By day</button></div>
       <div id="list"></div>
-      <details class="settings">
-        <summary>Settings</summary>
-        <label>Daily goal
-          <select id="set-goal"><option>3</option><option>5</option><option>10</option><option>15</option></select> words</label>
-        <button id="resend" class="ghost">Send all my words to Word Log again</button>
-        <p class="hint">Your words are kept on this phone. Sending them to Word Log also keeps a copy in your OneDrive.</p>
-        <p class="hint legal">© 2026 Eduardo Cruz · Word Pocket. Free for personal, non-commercial use under the <a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener">PolyForm Noncommercial License</a>. It may not be sold. All other rights reserved.</p>
-      </details>
     </section>
 
     <!-- Practice -->

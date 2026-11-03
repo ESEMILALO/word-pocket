@@ -54,6 +54,7 @@
     try{ new Audio(url).play().catch(() => speak(data.word)); }catch(e){ speak(data.word); }
   }
   function chime(ok){
+    if(settings.sound === false) return;
     try{
       const ctx = new (window.AudioContext || window.webkitAudioContext)();
       (ok === false ? [220, 180] : [660, 990]).forEach((f, i) => {
@@ -67,7 +68,7 @@
       setTimeout(() => ctx.close(), 800);
     }catch(e){}
   }
-  const buzz = ms => { try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} };
+  const buzz = ms => { if(settings.vibrate === false) return; try{ navigator.vibrate && navigator.vibrate(ms); }catch(e){} };
 
   // --- looking words up ---------------------------------------------------------
   async function getJson(url, ms){
@@ -554,10 +555,51 @@
     markSent();
     toast('Downloaded ' + name + '. Put it in OneDrive → Word Pocket.', 5000);
   }
-  $('resend').addEventListener('click', () => sendToWordLog(items));
-
-  $('set-goal').value = String(settings.goal);
-  $('set-goal').addEventListener('change', () => { settings.goal = +$('set-goal').value; saveSettings(); paintGoal(); });
+  // --- settings: the gear in the top bar --------------------------------------
+  function openSettings(){
+    const sh = $('sheet');
+    const sw = (id, on, label, sub) => '<label class="set-row"><span><b>' + label + '</b><small>' + sub + '</small></span>'
+      + '<input type="checkbox" class="switch" id="' + id + '"' + (on ? ' checked' : '') + '></label>';
+    const unsent = items.filter(x => !x.sent).length;
+    sh.innerHTML = '<div class="sheet-in settings-sheet">'
+      + '<div class="set-head"><h2>Settings</h2><button class="x" id="set-close" aria-label="Close">×</button></div>'
+      + '<div class="set-stats">'
+        + '<div><b>' + items.length + '</b><small>words</small></div>'
+        + '<div><b>🔥 ' + streak() + '</b><small>day streak</small></div>'
+        + '<div><b>⚡ ' + store.get('speedBest', 0) + '</b><small>speed record</small></div></div>'
+      + '<div class="set-group"><div class="set-label">Daily goal</div><div class="seg" id="set-goal">'
+        + [3, 5, 10, 15].map(n => '<button data-n="' + n + '"' + (+settings.goal === n ? ' class="on"' : '') + '>' + n + '</button>').join('')
+        + '</div><small class="set-sub">words to catch each day</small></div>'
+      + '<div class="set-group">'
+        + sw('set-sound', settings.sound !== false, 'Sounds', 'A chime when you save or answer')
+        + sw('set-vibrate', settings.vibrate !== false, 'Vibration', 'A little buzz on your phone')
+      + '</div>'
+      + '<div class="set-group">'
+        + '<button class="set-row link" id="set-source"><span><b>What you are watching</b><small>'
+          + esc(settings.source ? sourceLabel(settings.source) : 'Nothing set') + '</small></span><i>›</i></button>'
+        + '<button class="set-row link" id="set-resend"><span><b>Send all my words to Word Log</b><small>'
+          + (unsent ? unsent + ' not sent yet · ' : '') + 'Also keeps a copy in your OneDrive</small></span><i>›</i></button>'
+      + '</div>'
+      + '<p class="hint">Your words are kept on this phone.</p>'
+      + '<p class="hint legal">© 2026 Eduardo Cruz · Word Pocket. Free for personal, non-commercial use under the '
+        + '<a href="https://polyformproject.org/licenses/noncommercial/1.0.0" target="_blank" rel="noopener">PolyForm Noncommercial License</a>. '
+        + 'It may not be sold. All other rights reserved.</p>'
+      + '</div>';
+    sh.hidden = false;
+    const close = () => { sh.hidden = true; };
+    $('set-close').addEventListener('click', close);
+    sh.onclick = e => { if(e.target === sh) close(); };
+    $('set-goal').querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+      settings.goal = +b.dataset.n; saveSettings(); paintGoal();
+      $('set-goal').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+      if(!card) paintRecent();
+    }));
+    $('set-sound').addEventListener('change', e => { settings.sound = e.target.checked; saveSettings(); if(e.target.checked) chime(); });
+    $('set-vibrate').addEventListener('change', e => { settings.vibrate = e.target.checked; saveSettings(); if(e.target.checked) buzz(30); });
+    $('set-source').addEventListener('click', () => { close(); setTimeout(openSourceSheet, 120); });
+    $('set-resend').addEventListener('click', () => { close(); sendToWordLog(items); });
+  }
+  $('gear').addEventListener('click', openSettings);
 
   // Words saved offline get their meaning when the phone is back online.
   async function fillPending(){
