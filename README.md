@@ -10,7 +10,14 @@ movies, series, songs and videos. It goes with Word Log on the computer.
 - **🎬 What are you watching?**: tap it once and every word you save is
   kept with that movie or show. "What did they say?" keeps the line you heard.
 - **My words**: grouped by movie/show or by day. Tap a word to open it.
-- **Practice**: eight quick questions with your own words.
+- **Practice**, four ways:
+  - **Flashcards**: tap to turn the card, swipe right if you know the word,
+    left to see it again. Spaced repetition brings each word back after 1, 3,
+    7, 14 and 30 days; the number on the Practice tab is what is due today.
+  - **Quiz**: eight questions (meaning, word, the line you heard, listening).
+  - **Listen**: hear the word, find it.
+  - **Speed round**: as many as you can in 60 seconds. Beat your record.
+- **🔥 Streak**: the days in a row you saved or practised a word.
 - **The ring** at the top is today's goal (change it in My words → Settings).
 - **No AI**, no account. Meanings come from free services (dictionaryapi.dev,
   MyMemory, Datamuse); only the word you look up is sent to them.

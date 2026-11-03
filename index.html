@@ -17,10 +17,13 @@
 <body>
   <header class="top">
     <div class="brand"><img src="icons/icon-192.png" alt="" width="28" height="28"><h1>Word Pocket</h1></div>
+    <div class="top-r">
+    <button class="streak" id="streak" hidden aria-label="Streak"><span>🔥</span><b id="streak-n">0</b></button>
     <button class="goal" id="goal" aria-label="Today's goal">
       <svg viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="ring-bg"/><circle cx="18" cy="18" r="15" class="ring-fg" id="ring"/></svg>
       <b id="goal-num">0</b>
     </button>
+    </div>
   </header>
 
   <main>
@@ -65,7 +68,7 @@
     <button data-view="words">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 4h14v17l-7-4-7 4z"/></svg>My words <i id="count"></i></button>
     <button data-view="practice">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Practice</button>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></svg>Practice <i id="due"></i></button>
   </nav>
 
   <div id="sheet" class="sheet" hidden></div>

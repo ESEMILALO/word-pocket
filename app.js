@@ -333,7 +333,7 @@
     const un = $('c-unsave');
     if(un) un.addEventListener('click', () => {
       items = items.filter(x => x !== card.saved);
-      saveItems(); card.saved = null; paintCard(); paintGoal(); paintCount();
+      saveItems(); card.saved = null; paintCard(); paintGoal(); paintCount(); paintDue();
       toast('Removed from your words.');
     });
   }
@@ -363,18 +363,30 @@
     if(!saveItems()){ toast('Could not save: this phone has no space left for the app.'); return; }
     card.saved = it; card.justSaved = true;
     chime(); buzz(25);
-    paintCard(); paintGoal(); paintCount();
-    if(caughtToday() === (+settings.goal || 5)) setTimeout(() => toast('🎉 Today’s goal reached!'), 500);
+    paintCard(); paintGoal(); paintCount(); markActive(); paintDue();
+    if(caughtToday() === (+settings.goal || 5)) setTimeout(() => { confetti(); toast('🎉 Today’s goal reached!'); }, 400);
+  }
+
+  function todayCard(){
+    if(!items.length) return '';
+    const n = caughtToday(), goal = +settings.goal || 5, st = streak(), due = dueWords().length;
+    return '<div class="today-card">'
+      + '<div class="tc"><span>🔥</span><b>' + st + '</b><small>day' + (st === 1 ? '' : 's') + ' streak</small></div>'
+      + '<div class="tc"><span>🎯</span><b>' + n + '/' + goal + '</b><small>today</small></div>'
+      + '<button class="tc go' + (due ? ' hot' : '') + '" id="tc-review"><span>🃏</span><b>' + due + '</b><small>'
+        + (due ? 'to review' : 'reviewed') + '</small></button></div>';
   }
 
   function paintRecent(){
     const last = items.slice(0, 8);
-    $('recent').innerHTML = last.length
+    $('recent').innerHTML = todayCard() + (last.length
       ? '<div class="recent-h">Recently saved</div><div class="recent">' + last.map(x => '<button data-w="' + esc(x.word) + '">' + esc(x.word)
           + (x.es ? '<small>' + esc(x.es.split(',')[0]) + '</small>' : '') + '</button>').join('') + '</div>'
       : '<div class="empty"><b>Heard a word you don’t know?</b><br>Type it above, or tap the microphone and say it.'
-        + '<br><br>Tap 🎬 first to note what you are watching.</div>';
-    $('recent').querySelectorAll('button').forEach(b => b.addEventListener('click', () => look(b.dataset.w)));
+        + '<br><br>Tap 🎬 first to note what you are watching.</div>');
+    $('recent').querySelectorAll('.recent button').forEach(b => b.addEventListener('click', () => look(b.dataset.w)));
+    const rv = $('tc-review');
+    if(rv) rv.addEventListener('click', () => { show('practice'); startCards(false); });
   }
 
   // spelling suggestions while typing
@@ -494,7 +506,7 @@
       row.classList.add('out');
       setTimeout(() => {
         items = items.filter(x => x.id !== b.dataset.del);
-        saveItems(); paintList(); paintGoal(); paintCount();
+        saveItems(); paintList(); paintGoal(); paintCount(); paintDue();
       }, 250);
     }));
   }
@@ -558,12 +570,56 @@
   }
   window.addEventListener('online', fillPending);
 
+  // --- streak and celebrations --------------------------------------------------
+  // A day counts when you save a word or practise. The streak is the run of
+  // such days up to today (or up to yesterday, while today is still open).
+  function markActive(){
+    const days = store.get('days', []), t = todayKey();
+    if(days[days.length - 1] !== t){ days.push(t); store.set('days', days.slice(-400)); }
+    paintStreak();
+  }
+  function streak(){
+    const days = new Set(store.get('days', []));
+    const d = new Date();
+    if(!days.has(dayKey(d))) d.setDate(d.getDate() - 1);
+    let n = 0;
+    while(days.has(dayKey(d))){ n++; d.setDate(d.getDate() - 1); }
+    return n;
+  }
+  function paintStreak(){
+    const n = streak();
+    $('streak').hidden = !n;
+    $('streak-n').textContent = n;
+    $('streak').classList.toggle('cold', store.get('days', []).slice(-1)[0] !== todayKey());
+  }
+  $('streak').addEventListener('click', () => {
+    const n = streak(), today = store.get('days', []).slice(-1)[0] === todayKey();
+    toast('🔥 <b>' + n + ' day' + (n === 1 ? '' : 's') + '</b> in a row.' + (today ? ' See you tomorrow!' : ' Save or practise a word today to keep it!'), 3500);
+  });
+
+  function confetti(){
+    const box = document.createElement('div');
+    box.className = 'confetti';
+    const colors = ['#F2C14E', '#6FD08C', '#7FB2FF', '#E58AD1', '#FF9F43'];
+    for(let i = 0; i < 70; i++){
+      const p = document.createElement('i');
+      p.style.left = (Math.random() * 100) + 'vw';
+      p.style.background = colors[i % colors.length];
+      p.style.animationDelay = (Math.random() * 0.35) + 's';
+      p.style.animationDuration = (1.4 + Math.random() * 1.1) + 's';
+      p.style.setProperty('--dx', (Math.random() * 200 - 100) + 'px');
+      p.style.setProperty('--r', (Math.random() * 900 - 450) + 'deg');
+      box.appendChild(p);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 3200);
+  }
+
   // --- practice -----------------------------------------------------------------
-  // Eight quick questions with your own words, turn by turn: the word to its
-  // Spanish, the Spanish to the word, and the word back in the line you heard.
   let game = null;
   const shuffle = a => { a = a.slice(); for(let i = a.length - 1; i > 0; i--){ const j = Math.random() * (i + 1) | 0; [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const firstEs = x => String(x.es || '').split(',')[0].trim();
+  const playable = () => items.filter(x => x.word && firstEs(x));
 
   function gapOf(x){
     if(!x.sentence) return null;
@@ -572,51 +628,230 @@
     return m ? { before: x.sentence.slice(0, m.index), after: x.sentence.slice(m.index + m[0].length) } : null;
   }
 
-  function startGame(){
-    const pool = items.filter(x => x.word && firstEs(x));
-    if(pool.length < 4){
-      $('game').innerHTML = '<div class="empty"><b>Save at least 4 words to play.</b><br>You have ' + pool.length
-        + ' so far. Save the words you hear, then come back.</div>';
+  // Flashcards use spaced repetition: "I know it" moves a word up a box and
+  // further away (1, 3, 7, 14, 30 days); "Again" brings it back tomorrow.
+  const BOX_DAYS = [0, 1, 3, 7, 14, 30];
+  const addDays = n => { const d = new Date(); d.setDate(d.getDate() + n); return dayKey(d); };
+  const dueWords = () => items.filter(x => x.word && (!x.due || x.due <= todayKey()));
+  function paintDue(){ const n = dueWords().length; $('due').textContent = n ? String(n) : ''; }
+
+  function stopTimer(){ if(game && game.timer){ clearInterval(game.timer); game.timer = null; } }
+
+  function practiceMenu(){
+    stopTimer();
+    game = null;
+    const pool = playable().length, due = dueWords().length, best = store.get('speedBest', 0);
+    const mode = (id, icon, title, sub, locked, hot) => '<button class="mode' + (hot ? ' hot' : '') + '" data-mode="' + id + '"'
+      + (locked ? ' disabled' : '') + '><span class="m-icon">' + icon + '</span><b>' + title + '</b><small>' + sub + '</small></button>';
+    const lock = pool < 4;
+    $('game').innerHTML = '<div class="p-head"><h2>Practice</h2><span>' + items.length + ' word' + (items.length === 1 ? '' : 's') + ' in your pocket</span></div>'
+      + '<div class="modes">'
+        + mode('cards', '🃏', 'Flashcards', !items.length ? 'Save words first' : due ? due + ' to review' : 'All caught up ✓', !items.length, due > 0)
+        + mode('quiz', '🎯', 'Quiz', lock ? 'Needs 4 words' : '8 questions', lock)
+        + mode('listen', '🎧', 'Listen', lock ? 'Needs 4 words' : 'Hear it, find it', lock)
+        + mode('speed', '⚡', 'Speed round', lock ? 'Needs 4 words' : best ? 'Best: ' + best : '60 seconds', lock)
+      + '</div>'
+      + (lock ? '<p class="hint" style="text-align:center">Save ' + (4 - pool) + ' more word' + (4 - pool === 1 ? '' : 's') + ' to unlock the games.</p>' : '');
+    $('game').querySelectorAll('.mode').forEach(b => b.addEventListener('click', () => {
+      const m = b.dataset.mode;
+      if(m === 'cards') startCards(false);
+      else if(m === 'speed') startSpeed();
+      else startQuiz(m);
+    }));
+  }
+
+  // --- flashcards: tap to turn, swipe right if you know it, left to see it again
+  function startCards(all){
+    let list = (all ? items.slice() : dueWords()).filter(x => x.word);
+    list = shuffle(list).sort((a, b) => (a.box || 0) - (b.box || 0)).slice(0, 20);
+    if(!list.length){
+      $('game').innerHTML = '<div class="g-end"><div class="g-score great">✓</div><div class="g-ask">All caught up!</div>'
+        + '<p class="hint">Every word is resting until its next review.</p>'
+        + '<div class="g-btns"><button class="btn" id="fc-all">Review all anyway</button><button class="ghost" id="fc-menu">Practice</button></div></div>';
+      $('fc-all').addEventListener('click', () => startCards(true));
+      $('fc-menu').addEventListener('click', practiceMenu);
       return;
     }
-    // the words you miss most, and the ones not practised yet, come first
-    const weight = x => { const s = stats[x.id] || {}; return (s.w || 0) - (s.r || 0) * 0.7 - (s.t ? 0 : 1) + Math.random() * 0.8; };
-    const chosen = pool.slice().sort((a, b) => weight(b) - weight(a)).slice(0, 8);
-    const qs = shuffle(chosen).map((x, i) => {
-      let kind = ['es', 'en', 'gap'][i % 3];
-      const gap = kind === 'gap' ? gapOf(x) : null;
-      if(kind === 'gap' && !gap) kind = i % 2 ? 'en' : 'es';
-      const answer = kind === 'es' ? firstEs(x) : x.word;
-      const opts = [answer];
-      for(const o of shuffle(pool.filter(o => o.id !== x.id))){
-        const v = kind === 'es' ? firstEs(o) : o.word;
-        if(opts.length < 4 && v && opts.every(p => p.toLowerCase() !== v.toLowerCase())) opts.push(v);
-      }
-      return { x, kind, gap, answer, opts: shuffle(opts) };
+    game = { mode: 'cards', list, i: 0, known: 0, again: 0, requeued: new Set(), total: list.length };
+    paintFlash();
+  }
+
+  function paintFlash(){
+    const g = game, x = g.list[g.i];
+    const box = x.box || 0;
+    $('game').innerHTML = '<div class="g-top"><button class="back" id="g-back" aria-label="Back">‹</button>'
+        + '<div class="g-bar"><i style="width:' + (g.i / g.list.length * 100) + '%"></i></div>'
+        + '<span class="fc-count">' + (g.i + 1) + '/' + g.list.length + '</span></div>'
+      + '<div class="fc-stack">'
+        + (g.list[g.i + 1] ? '<div class="fc fc-next"></div>' : '')
+        + '<div class="fc" id="fc"><span class="fc-tag yes">I KNOW IT</span><span class="fc-tag no">AGAIN</span>'
+          + '<div class="fc-in" id="fc-in">'
+            + '<div class="fc-face fc-front"><div class="fc-word">' + esc(x.word) + '</div>'
+              + (x.pron ? '<div class="c-pron">' + esc(x.pron) + '</div>' : '')
+              + (x.source ? '<div class="g-src">' + esc(x.source) + '</div>' : '')
+              + '<div class="fc-boxes">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= box ? 'on' : '') + '"></i>').join('') + '</div>'
+              + '<div class="hint">Tap to see the meaning</div></div>'
+            + '<div class="fc-face fc-back"><div class="fc-word small">' + esc(x.word) + '</div>'
+              + '<div class="c-es">' + esc(x.es || '') + '</div>'
+              + (x.meaning ? '<div class="fc-mean">' + esc(x.meaning) + '</div>' : '')
+              + (x.sentence ? '<div class="fc-sent">“' + esc(x.sentence) + '”</div>' : '') + '</div>'
+          + '</div></div></div>'
+      + '<div class="fc-btns"><button class="fc-b no" id="fc-no" aria-label="Again">✕</button>'
+        + '<button class="fc-b say" id="fc-say" aria-label="Listen">' + SPEAKER + '</button>'
+        + '<button class="fc-b yes" id="fc-yes" aria-label="I know it">✓</button></div>'
+      + '<p class="hint" style="text-align:center">Swipe right if you know it, left to see it again</p>';
+    $('g-back').addEventListener('click', practiceMenu);
+    $('fc-say').addEventListener('click', () => speak(x.word));
+    $('fc-no').addEventListener('click', () => decide(false));
+    $('fc-yes').addEventListener('click', () => decide(true));
+
+    // dragging the card
+    const fc = $('fc');
+    let start = null, dx = 0, moved = false;
+    fc.addEventListener('pointerdown', e => { start = { x: e.clientX, y: e.clientY }; dx = 0; moved = false; fc.setPointerCapture(e.pointerId); fc.style.transition = 'none'; });
+    fc.addEventListener('pointermove', e => {
+      if(!start) return;
+      dx = e.clientX - start.x;
+      if(Math.abs(dx) > 6) moved = true;
+      fc.style.transform = 'translateX(' + dx + 'px) rotate(' + (dx / 18) + 'deg)';
+      fc.querySelector('.fc-tag.yes').style.opacity = Math.max(0, Math.min(1, dx / 90));
+      fc.querySelector('.fc-tag.no').style.opacity = Math.max(0, Math.min(1, -dx / 90));
     });
-    game = { qs, i: 0, right: 0, combo: 0, best: 0, missed: [], locked: false };
+    const end = () => {
+      if(!start) return;
+      start = null;
+      fc.style.transition = '';
+      if(Math.abs(dx) > 90) return decide(dx > 0);
+      fc.style.transform = '';
+      fc.querySelectorAll('.fc-tag').forEach(t => { t.style.opacity = 0; });
+      if(!moved){ $('fc-in').classList.toggle('flip'); if($('fc-in').classList.contains('flip')) speak(x.word); }
+    };
+    fc.addEventListener('pointerup', end);
+    fc.addEventListener('pointercancel', end);
+  }
+
+  function decide(know){
+    const g = game;
+    if(!g || g.mode !== 'cards' || g.busy) return;
+    g.busy = true;
+    const x = g.list[g.i];
+    const fc = $('fc');
+    fc.style.transition = 'transform .3s ease-in, opacity .3s';
+    fc.style.transform = 'translateX(' + (know ? 140 : -140) + '%) rotate(' + (know ? 24 : -24) + 'deg)';
+    fc.style.opacity = '0';
+    fc.querySelector(know ? '.fc-tag.yes' : '.fc-tag.no').style.opacity = 1;
+    if(know){
+      // missed earlier in this round: it stays near, back tomorrow
+      x.box = g.requeued.has(x.id) ? 1 : Math.min(5, (x.box || 0) + 1);
+      x.due = addDays(BOX_DAYS[x.box]);
+      g.known++;
+    } else {
+      x.box = 1;
+      x.due = addDays(1);
+      g.again++;
+      // once more before the end of this round
+      if(!g.requeued.has(x.id)){ g.requeued.add(x.id); g.list.push(x); }
+    }
+    saveItems(); markActive(); paintDue();
+    buzz(know ? 15 : [30, 40, 30]);
+    setTimeout(() => {
+      if(game !== g) return;
+      g.busy = false;
+      g.i++;
+      if(g.i < g.list.length) paintFlash(); else cardsEnd();
+    }, 280);
+  }
+
+  function cardsEnd(){
+    const g = game;
+    const perfect = g.again === 0;
+    $('game').innerHTML = '<div class="g-end"><div class="g-score' + (perfect ? ' great' : '') + '">' + g.total + '</div>'
+      + '<div class="g-ask">' + (g.total === 1 ? 'word reviewed' : 'words reviewed') + '</div>'
+      + '<div class="fc-sum"><span class="yes">✓ ' + g.known + ' known</span><span class="no">↺ ' + g.again + ' again</span></div>'
+      + '<p class="hint">' + (perfect ? 'Perfect! They will come back in a few days.' : 'The ones marked again come back tomorrow.') + '</p>'
+      + '<div class="g-btns"><button class="btn" id="g-menu">Practice</button></div></div>';
+    $('g-menu').addEventListener('click', practiceMenu);
+    if(perfect) confetti();
+    chime(true);
+    game = null;
+  }
+
+  // --- quiz, listen and the speed round ---------------------------------------
+  function makeQ(x, kind, pool){
+    const gap = kind === 'gap' ? gapOf(x) : null;
+    if(kind === 'gap' && !gap) kind = Math.random() < 0.5 ? 'en' : 'es';
+    const answer = kind === 'es' ? firstEs(x) : x.word;
+    const opts = [answer];
+    for(const o of shuffle(pool.filter(o => o.id !== x.id))){
+      const v = kind === 'es' ? firstEs(o) : o.word;
+      if(opts.length < 4 && v && opts.every(p => p.toLowerCase() !== v.toLowerCase())) opts.push(v);
+    }
+    return { x, kind, gap, answer, opts: shuffle(opts) };
+  }
+
+  // the words you miss most, and the ones not practised yet, come first
+  function pick(pool, n){
+    const weight = x => { const s = stats[x.id] || {}; return (s.w || 0) - (s.r || 0) * 0.7 - (s.t ? 0 : 1) + Math.random() * 0.8; };
+    return pool.slice().sort((a, b) => weight(b) - weight(a)).slice(0, n);
+  }
+
+  function startQuiz(mode){
+    const pool = playable();
+    const kinds = mode === 'listen' ? ['listen'] : ['es', 'en', 'gap', 'listen'];
+    const qs = shuffle(pick(pool, 8)).map((x, i) => makeQ(x, kinds[i % kinds.length], pool));
+    game = { mode, qs, i: 0, right: 0, combo: 0, best: 0, missed: [], locked: false };
     paintQuestion();
+  }
+
+  function startSpeed(){
+    const pool = playable();
+    game = { mode: 'speed', pool, qs: [], i: 0, right: 0, combo: 0, best: 0, missed: [], locked: false,
+             ends: Date.now() + 60000, timer: null };
+    game.qs.push(makeQ(pick(pool, 1)[0], Math.random() < 0.5 ? 'es' : 'en', pool));
+    paintQuestion();
+    const g = game;
+    g.timer = setInterval(() => {
+      const left = Math.max(0, g.ends - Date.now());
+      const bar = $('g-time');
+      if(bar) bar.style.width = (left / 600) + '%';
+      const sec = $('g-sec');
+      if(sec) sec.textContent = Math.ceil(left / 1000);
+      if(left <= 10000 && bar) bar.classList.add('late');
+      if(!left){ clearInterval(g.timer); g.timer = null; if(game === g) speedEnd(); }
+    }, 100);
   }
 
   function paintQuestion(){
     const g = game, q = g.qs[g.i];
-    const ask = { es: 'What does it mean?', en: 'Which word is it?', gap: 'Which word completes it?' }[q.kind];
+    const ask = { es: 'What does it mean?', en: 'Which word is it?', gap: 'Which word completes it?', listen: 'Which word do you hear?' }[q.kind];
     const prompt = q.kind === 'es' ? '<div class="g-q">' + esc(q.x.word) + '</div>'
       : q.kind === 'en' ? '<div class="g-q es">' + esc(firstEs(q.x)) + '</div>'
+      : q.kind === 'listen' ? '<button class="g-listen" id="g-listen" aria-label="Play again">' + SPEAKER + '</button>'
       : '<div class="g-sent">' + esc(q.gap.before) + '<u></u>' + esc(q.gap.after) + '</div>';
-    $('game').innerHTML = '<div class="g-top"><div class="g-bar"><i style="width:' + (g.i / g.qs.length * 100) + '%"></i></div>'
-        + '<span class="g-combo" id="combo">' + (g.combo >= 2 ? '🔥 ' + g.combo : '') + '</span></div>'
-      + '<div class="g-card"><div class="g-ask">' + ask + '</div>' + prompt
-        + (q.x.source ? '<div class="g-src">' + esc(q.x.source) + '</div>' : '')
-        + '<div class="g-opts">' + q.opts.map((o, k) => '<button class="g-opt" data-k="' + k + '">' + esc(o) + '</button>').join('') + '</div></div>';
+    const top = g.mode === 'speed'
+      ? '<div class="g-top"><button class="back" id="g-back" aria-label="Back">‹</button><div class="g-bar time"><i id="g-time" style="width:'
+        + (Math.max(0, g.ends - Date.now()) / 600) + '%"></i></div><span class="g-sec" id="g-sec">' + Math.ceil(Math.max(0, g.ends - Date.now()) / 1000)
+        + '</span><span class="g-score-now">' + g.right + '</span></div>'
+      : '<div class="g-top"><button class="back" id="g-back" aria-label="Back">‹</button><div class="g-bar"><i style="width:' + (g.i / g.qs.length * 100) + '%"></i></div>'
+        + '<span class="g-combo" id="combo">' + (g.combo >= 2 ? '🔥 ' + g.combo : '') + '</span></div>';
+    $('game').innerHTML = top
+      + '<div class="g-card' + (g.mode === 'speed' ? ' quick' : '') + '"><div class="g-ask">' + ask + '</div>' + prompt
+        + (q.x.source && g.mode !== 'speed' && q.kind !== 'listen' ? '<div class="g-src">' + esc(q.x.source) + '</div>' : '')
+        + '<div class="g-opts">' + q.opts.map((o, k) => '<button class="g-opt" data-k="' + k + '">' + esc(o) + '</button>').join('') + '</div></div>'
+      + (g.mode === 'speed' && g.combo >= 2 ? '<div class="g-combo pop" style="text-align:center;margin-top:10px">🔥 ' + g.combo + ' in a row</div>' : '');
     g.locked = false;
-    if(q.kind === 'es') speak(q.x.word);
+    $('g-back').addEventListener('click', practiceMenu);
+    if(q.kind === 'listen'){
+      const b = $('g-listen');
+      b.addEventListener('click', () => { speak(q.x.word); b.classList.remove('playing'); void b.offsetWidth; b.classList.add('playing'); });
+      setTimeout(() => speak(q.x.word), 250);
+    } else if(q.kind === 'es' && g.mode !== 'speed') speak(q.x.word);
     $('game').querySelectorAll('.g-opt').forEach(b => b.addEventListener('click', () => answer(+b.dataset.k)));
   }
 
   function answer(k){
     const g = game;
-    if(!g || g.locked) return;
+    if(!g || g.locked || !g.qs) return;
     g.locked = true;
     const q = g.qs[g.i], ok = q.opts[k] === q.answer;
     const btns = $('game').querySelectorAll('.g-opt');
@@ -625,18 +860,37 @@
     chime(ok);
     const s = stats[q.x.id] = stats[q.x.id] || {};
     if(ok){ g.right++; g.combo++; g.best = Math.max(g.best, g.combo); s.r = (s.r || 0) + 1; }
-    else{ g.combo = 0; g.missed.push(q.x); s.w = (s.w || 0) + 1; }
+    else{ g.combo = 0; if(g.missed.indexOf(q.x) === -1) g.missed.push(q.x); s.w = (s.w || 0) + 1; }
     s.t = Date.now();
     store.set('stats', stats);
+    if(g.i === 0) markActive();
     const c = $('combo');
-    c.textContent = g.combo >= 2 ? '🔥 ' + g.combo : '';
-    if(g.combo >= 2){ c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop'); }
-    if(q.kind !== 'es') speak(q.x.word);
+    if(c){
+      c.textContent = g.combo >= 2 ? '🔥 ' + g.combo : '';
+      if(g.combo >= 2){ c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop'); }
+    }
+    if(g.mode === 'speed'){
+      setTimeout(() => {
+        if(game !== g || !g.timer) return;
+        const last = q.x;
+        const next = pick(g.pool.filter(x => x !== last), 3)[Math.random() * 3 | 0] || g.pool[0];
+        g.qs.push(makeQ(next, Math.random() < 0.5 ? 'es' : 'en', g.pool));
+        g.i++;
+        paintQuestion();
+      }, ok ? 300 : 800);
+      return;
+    }
+    if(q.kind !== 'es' && q.kind !== 'listen') speak(q.x.word);
     setTimeout(() => {
       if(game !== g) return;
       g.i++;
       if(g.i < g.qs.length) paintQuestion(); else paintEnd();
     }, ok ? 900 : 1700);
+  }
+
+  function missedHtml(g){
+    return g.missed.length ? '<div class="g-miss"><div class="g-ask" style="margin-bottom:6px">To look at again</div>'
+      + g.missed.map(x => '<div><b>' + esc(x.word) + '</b> — <span>' + esc(x.es) + '</span></div>').join('') + '</div>' : '';
   }
 
   function paintEnd(){
@@ -647,11 +901,29 @@
       + '<div class="g-stars">' + [1, 2, 3].map(i => '<span style="color:' + (i <= stars ? '#F2C14E' : '#333A46') + '">★</span>').join('') + '</div>'
       + '<div class="g-ask">' + (pct === 1 ? 'Perfect round!' : pct >= 0.6 ? 'Nice work' : 'Keep going, they will stick')
         + (g.best >= 3 ? ' · best run ' + g.best : '') + '</div>'
-      + (g.missed.length ? '<div class="g-miss"><div class="g-ask" style="margin-bottom:6px">To look at again</div>'
-          + g.missed.map(x => '<div><b>' + esc(x.word) + '</b> — <span>' + esc(x.es) + '</span></div>').join('') + '</div>' : '')
-      + '<div class="g-btns"><button class="btn" id="g-again">Play again</button><button class="ghost" id="g-words">My words</button></div></div>';
-    $('g-again').addEventListener('click', startGame);
-    $('g-words').addEventListener('click', () => show('words'));
+      + missedHtml(g)
+      + '<div class="g-btns"><button class="btn" id="g-again">Play again</button><button class="ghost" id="g-menu">Practice</button></div></div>';
+    const mode = g.mode;
+    $('g-again').addEventListener('click', () => startQuiz(mode));
+    $('g-menu').addEventListener('click', practiceMenu);
+    if(pct === 1) confetti();
+    game = null;
+  }
+
+  function speedEnd(){
+    const g = game, best = store.get('speedBest', 0), record = g.right > best && g.right > 0;
+    if(record) store.set('speedBest', g.right);
+    $('game').innerHTML = '<div class="g-end">'
+      + '<div class="g-ask">Time’s up!</div>'
+      + '<div class="g-score' + (record ? ' great' : '') + '">' + g.right + '</div>'
+      + '<div class="g-ask">' + (record ? '🏆 New record!' : 'right answers · best ' + best) + '</div>'
+      + (g.best >= 3 ? '<p class="hint">Best run: ' + g.best + ' in a row</p>' : '')
+      + missedHtml(g)
+      + '<div class="g-btns"><button class="btn" id="g-again">Play again</button><button class="ghost" id="g-menu">Practice</button></div></div>';
+    $('g-again').addEventListener('click', startSpeed);
+    $('g-menu').addEventListener('click', practiceMenu);
+    if(record) confetti();
+    chime(true);
     game = null;
   }
 
@@ -660,14 +932,24 @@
     document.querySelectorAll('.tabs button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
     ['look', 'words', 'practice'].forEach(v => { $('view-' + v).hidden = v !== view; });
     if(view === 'words') paintList();
-    if(view === 'practice') startGame();
-    if(view !== 'practice') game = null;
+    if(view === 'practice') practiceMenu();
+    else{ stopTimer(); game = null; }
+    if(view === 'look' && !card) paintRecent();
+    // each screen slides in
+    const v = $('view-' + view);
+    v.classList.remove('enter'); void v.offsetWidth; v.classList.add('enter');
     window.scrollTo(0, 0);
   }
   document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => show(b.dataset.view)));
   document.querySelectorAll('.groupby button').forEach(b => b.classList.toggle('on', b.dataset.g === settings.groupBy));
 
-  paintSource(); paintGoal(); paintCount(); paintRecent();
+  // days you saved words count for the streak too, including before it existed
+  (() => {
+    const d = new Set(store.get('days', []));
+    items.forEach(x => { if(x.savedAt) d.add(dayKey(x.savedAt)); });
+    store.set('days', [...d].sort().slice(-400));
+  })();
+  paintSource(); paintGoal(); paintCount(); paintStreak(); paintDue(); paintRecent();
   if(navigator.onLine) fillPending();
 
   // works offline once it has been opened
